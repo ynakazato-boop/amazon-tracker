@@ -11,6 +11,7 @@ from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from src.database import init_db, insert_ranking, start_run_log, finish_run_log
 from src.scraper import run_checks_sync
@@ -84,9 +85,11 @@ def start_scheduler() -> BackgroundScheduler:
     scheduler = BackgroundScheduler(timezone="Asia/Tokyo")
 
     scheduler.add_job(run_daily,   CronTrigger(hour=2, minute=0, timezone="Asia/Tokyo"), id="daily")
+    scheduler.add_job(lambda: _run_job("twice_daily"), CronTrigger(hour="8,20", minute=0, timezone="Asia/Tokyo"), id="twice_daily")
     scheduler.add_job(run_weekly,  CronTrigger(day_of_week="mon", hour=2, minute=0, timezone="Asia/Tokyo"), id="weekly")
+    scheduler.add_job(lambda: _run_job("biweekly"), IntervalTrigger(weeks=2, timezone="Asia/Tokyo"), id="biweekly")
     scheduler.add_job(run_monthly, CronTrigger(day=1, hour=2, minute=0, timezone="Asia/Tokyo"), id="monthly")
 
     scheduler.start()
-    logger.info("Scheduler started (daily=02:00, weekly=Mon 02:00, monthly=1st 02:00 JST)")
+    logger.info("Scheduler started (daily=02:00, twice_daily=08:00&20:00, weekly=Mon 02:00, biweekly=every 2 weeks, monthly=1st 02:00 JST)")
     return scheduler

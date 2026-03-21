@@ -73,28 +73,40 @@ page = st.sidebar.radio(
     ["ダッシュボード", "推移グラフ", "ASIN登録", "実行ログ"],
 )
 
-freq_label = {"daily": "毎日", "weekly": "毎週月曜", "monthly": "毎月1日"}
+freq_label = {
+    "daily": "毎日",
+    "twice_daily": "1日2回（8時・20時）",
+    "weekly": "毎週月曜",
+    "biweekly": "隔週月曜",
+    "monthly": "毎月1日",
+}
 
 # ─── Page 1: Dashboard ────────────────────────────────────────────────────────
 if page == "ダッシュボード":
     st.title("📊 最新順位ダッシュボード")
 
-    col_refresh, col_run = st.columns([1, 2])
-    if col_refresh.button("🔄 更新"):
+    if st.button("🔄 更新"):
         st.rerun()
 
-    if col_run.button("▶️ 今すぐ全件実行", type="primary"):
-        df_t = load_targets_csv()
-        if df_t.empty:
-            st.warning("登録されているターゲットがありません。")
-        else:
-            targets = [
-                {"asin": r["asin"], "keyword": r["keyword"], "note": r.get("note", "")}
-                for _, r in df_t.iterrows()
-            ]
+    df_t = load_targets_csv()
+    if not df_t.empty:
+        target_options = [f"{r['asin']} / {r['keyword']}" for _, r in df_t.iterrows()]
+        selected_targets = st.multiselect(
+            "今すぐ計測するキーワードを選択（複数可）",
+            target_options,
+            default=[],
+            placeholder="計測したいキーワードを選んでください...",
+        )
+        if st.button("▶️ 選択した件を今すぐ計測", type="primary", disabled=not selected_targets):
+            targets = []
+            for sel in selected_targets:
+                for _, r in df_t.iterrows():
+                    if f"{r['asin']} / {r['keyword']}" == sel:
+                        targets.append({"asin": r["asin"], "keyword": r["keyword"], "note": r.get("note", "")})
+                        break
             from src.scraper import run_checks_sync
             from src.database import insert_ranking, start_run_log, finish_run_log
-            with st.spinner(f"{len(targets)}件を実行中... (1件あたり約30秒かかります)"):
+            with st.spinner(f"{len(targets)}件を計測中... (1件あたり約30秒かかります)"):
                 log_id = start_run_log()
                 results = run_checks_sync(targets)
                 success = 0
@@ -192,7 +204,7 @@ elif page == "ASIN登録":
         with col1:
             frequency_input = st.selectbox(
                 "計測頻度",
-                ["daily", "weekly", "monthly"],
+                ["daily", "twice_daily", "weekly", "biweekly", "monthly"],
                 format_func=lambda x: freq_label[x],
             )
         with col2:
