@@ -189,6 +189,20 @@ elif page == "推移グラフ":
     st.plotly_chart(fig, use_container_width=True)
     st.caption("145 = 144位圏外")
 
+    st.subheader("数値データ")
+    for sel in selected:
+        asin, kw = sel.split(" / ", 1)
+        history = get_ranking_history(asin, kw, days=days)
+        if not history:
+            continue
+        df_h = pd.DataFrame(history)
+        df_h["checked_at"] = pd.to_datetime(df_h["checked_at"])
+        df_h["rank"] = df_h["rank"].fillna(145).astype(int)
+        df_h["rank"] = df_h["rank"].apply(lambda x: "圏外(144位以降)" if x == 145 else str(x))
+        df_h = df_h[["checked_at", "rank", "page"]].rename(columns={"checked_at": "計測日時", "rank": "順位", "page": "ページ"})
+        st.markdown(f"**{sel}**")
+        st.dataframe(df_h.sort_values("計測日時", ascending=False), use_container_width=True, hide_index=True)
+
 # ─── Page 3: ASIN Registration ────────────────────────────────────────────────
 elif page == "ASIN登録":
     st.title("➕ ASIN / キーワード登録")
