@@ -84,7 +84,7 @@ async def check_rank(
             logger.info(f"[{asin}] '{keyword}' page {page_num}: {url}")
 
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
             except Exception as e:
                 logger.warning(f"Navigation error on page {page_num}: {e}")
                 break
