@@ -1,0 +1,10 @@
+2026-03-20 12:11:59,073 [INFO] __main__: [TEST] Checking ASIN=B0D66SCPCZ keyword='ローション'
+2026-03-20 12:12:00,322 [INFO] src.scraper: [B0D66SCPCZ] 'ローション' page 1: https://www.amazon.co.jp/s?k=%E3%83%AD%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3&page=1
+2026-03-20 12:12:08,889 [INFO] src.scraper: Found B0D66SCPCZ at rank 36 (page 1, pos 36)
+2026-03-20 12:12:08,968 [INFO] __main__: [TEST] Result: rank=36, page=1
+2026-03-20 12:12:08,971 [INFO] __main__: [TEST] Done. Check data/rankings.db for results.
+2026-03-20 12:15:43,063 [INFO] __main__: [TEST] Checking ASIN=B0D66SCPCZ keyword='ローション'
+2026-03-20 12:15:44,209 [INFO] src.scraper: [B0D66SCPCZ] 'ローション' page 1: https://www.amazon.co.jp/s?k=%E3%83%AD%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3&page=1
+2026-03-20 12:15:52,268 [INFO] src.scraper: Found B0D66SCPCZ at rank 30 (page 1, pos 30)
+2026-03-20 12:15:52,313 [INFO] __main__: [TEST] Result: rank=30, page=1
+2026-03-20 12:15:52,314 [INFO] __main__: [TEST] Done. Check data/rankings.db for results.

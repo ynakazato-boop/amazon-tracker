@@ -1,0 +1,25 @@
+# fly.toml
+# 「your-seo-tracker」を好きな名前に変更してください（英数字・ハイフンのみ）
+app = "your-seo-tracker"
+primary_region = "nrt"  # 東京リージョン
+
+[build]
+
+[env]
+  TZ = "Asia/Tokyo"
+
+[http_service]
+  internal_port = 8501
+  force_https = true
+  auto_stop_machines = false   # 常時起動（スリープしない）
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[mounts]]
+  source = "seo_data"
+  destination = "/app/data"   # DBとtargets.csvを永続化
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512   # Chromium起動に512MB必要

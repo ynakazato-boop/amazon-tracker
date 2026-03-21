@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(jobs:*)",
+      "Bash(source venv/bin/activate)",
+      "Bash(pip install:*)",
+      "Bash(python -c \"import playwright; import apscheduler; import streamlit; import plotly; import pandas; print\\(''all ok''\\)\")",
+      "Bash(python -c \"from playwright.sync_api import sync_playwright; p = sync_playwright\\(\\).start\\(\\); b = p.chromium.launch\\(\\); b.close\\(\\); p.stop\\(\\); print\\(''chromium ok''\\)\")",
+      "Bash(python main.py --test)",
+      "Bash(git --version)",
+      "Bash(gh --version)"
+    ]
+  }
+}

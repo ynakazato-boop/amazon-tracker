@@ -1,0 +1,17 @@
+[Unit]
+Description=Amazon Keyword Rank Tracker
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/amazon-tracker
+ExecStart=/opt/amazon-tracker/venv/bin/python main.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/opt/amazon-tracker/tracker.log
+StandardError=append:/opt/amazon-tracker/tracker.log
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
