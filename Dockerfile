@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 # 日本語フォント（Amazon検索に必要）
 RUN apt-get update && apt-get install -y \
