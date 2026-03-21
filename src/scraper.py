@@ -8,6 +8,7 @@ Amazon.co.jp keyword rank scraper using Playwright.
 """
 
 import asyncio
+import concurrent.futures
 import logging
 import random
 import urllib.parse
@@ -178,4 +179,6 @@ async def run_checks(targets: list[dict]) -> list[RankResult]:
 
 def run_checks_sync(targets: list[dict]) -> list[RankResult]:
     """Synchronous wrapper for run_checks."""
-    return asyncio.run(run_checks(targets))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(asyncio.run, run_checks(targets))
+        return future.result()

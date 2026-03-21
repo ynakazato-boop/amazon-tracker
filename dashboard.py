@@ -106,7 +106,7 @@ if page == "ダッシュボード":
                         break
             from src.scraper import run_checks_sync
             from src.database import insert_ranking, start_run_log, finish_run_log
-            with st.spinner(f"{len(targets)}件を計測中... (1件あたり約30秒かかります)"):
+            with st.spinner(f"{len(targets)}件を計測中... (1件あたり約60秒かかります)"):
                 log_id = start_run_log()
                 results = run_checks_sync(targets)
                 success = 0
@@ -208,10 +208,10 @@ elif page == "ASIN登録":
     st.title("➕ ASIN / キーワード登録")
 
     with st.form("register_form", clear_on_submit=True):
-        asin_input = st.text_input("ASIN", placeholder="例: B0D66SCPCZ")
+        asin_input = st.text_input("ASIN", placeholder="例: B0B3RMP7J3")
         keywords_input = st.text_area(
             "キーワード（1行に1つ）",
-            placeholder="ローション\nオナホ\nオナホ ローション",
+            placeholder="ファンデーション\nファンデーション リキッド\nファンデーション カバー力",
             height=200,
         )
         col1, col2 = st.columns(2)
