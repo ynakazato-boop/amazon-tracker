@@ -84,11 +84,11 @@ def start_scheduler() -> BackgroundScheduler:
     init_db()
     scheduler = BackgroundScheduler(timezone="Asia/Tokyo")
 
-    scheduler.add_job(run_daily,   CronTrigger(hour=2, minute=0, timezone="Asia/Tokyo"), id="daily")
-    scheduler.add_job(lambda: _run_job("twice_daily"), CronTrigger(hour="8,20", minute=0, timezone="Asia/Tokyo"), id="twice_daily")
-    scheduler.add_job(run_weekly,  CronTrigger(day_of_week="mon", hour=2, minute=0, timezone="Asia/Tokyo"), id="weekly")
-    scheduler.add_job(lambda: _run_job("biweekly"), IntervalTrigger(weeks=2, timezone="Asia/Tokyo"), id="biweekly")
-    scheduler.add_job(run_monthly, CronTrigger(day=1, hour=2, minute=0, timezone="Asia/Tokyo"), id="monthly")
+    scheduler.add_job(run_daily,   CronTrigger(hour=2, minute=0, timezone="Asia/Tokyo"), id="daily",       misfire_grace_time=3600, coalesce=True)
+    scheduler.add_job(lambda: _run_job("twice_daily"), CronTrigger(hour="8,20", minute=0, timezone="Asia/Tokyo"), id="twice_daily", misfire_grace_time=3600, coalesce=True)
+    scheduler.add_job(run_weekly,  CronTrigger(day_of_week="mon", hour=2, minute=0, timezone="Asia/Tokyo"), id="weekly",      misfire_grace_time=3600, coalesce=True)
+    scheduler.add_job(lambda: _run_job("biweekly"), IntervalTrigger(weeks=2, timezone="Asia/Tokyo"), id="biweekly",   misfire_grace_time=3600, coalesce=True)
+    scheduler.add_job(run_monthly, CronTrigger(day=1, hour=2, minute=0, timezone="Asia/Tokyo"), id="monthly",     misfire_grace_time=3600, coalesce=True)
 
     scheduler.start()
     logger.info("Scheduler started (daily=02:00, twice_daily=08:00&20:00, weekly=Mon 02:00, biweekly=every 2 weeks, monthly=1st 02:00 JST)")
