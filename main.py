@@ -2,8 +2,10 @@
 Amazon Keyword Rank Tracker - Entry point
 
 Usage:
-  python main.py           # Start scheduler (runs indefinitely)
-  python main.py --test    # Test mode: run 1 ASIN × 1 KW immediately
+  python main.py                 # Start the long-running APScheduler
+  python main.py --test          # Test mode: run 1 ASIN x 1 KW immediately
+  python main.py --run daily     # Run one frequency batch once, then exit
+                                 # (used by the host cron - see run-cron.sh)
 """
 
 import argparse
@@ -52,10 +54,22 @@ def run_test():
     results = run_checks_sync(targets)
     r = results[0]
 
-    logger.info(f"[TEST] Result: rank={r.rank}, page={r.page}")
-    insert_ranking(r.asin, r.keyword, r.rank, r.page, t["note"])
-    finish_run_log(log_id, total=1, success=1, failed=0)
+    logger.info(f"[TEST] Result: rank={r.rank}, page={r.page}, ok={getattr(r, 'ok', True)}")
+    if getattr(r, "ok", True):
+        insert_ranking(r.asin, r.keyword, r.rank, r.page, t["note"])
+    finish_run_log(log_id, total=1, success=1 if getattr(r, "ok", True) else 0,
+                   failed=0 if getattr(r, "ok", True) else 1)
     logger.info("[TEST] Done. Check data/rankings.db for results.")
+
+
+def run_once(frequency: str):
+    from src.database import init_db
+    from src.scheduler import run_job
+
+    init_db()
+    logger.info(f"[RUN] one-shot batch for frequency='{frequency}'")
+    run_job(frequency)
+    logger.info(f"[RUN] finished frequency='{frequency}'")
 
 
 def run_scheduler():
@@ -74,9 +88,13 @@ def run_scheduler():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Amazon Keyword Rank Tracker")
     parser.add_argument("--test", action="store_true", help="Run a single test check immediately")
+    parser.add_argument("--run", metavar="FREQUENCY",
+                        help="Run one frequency batch (daily/weekly/monthly/...) once, then exit")
     args = parser.parse_args()
 
     if args.test:
         run_test()
+    elif args.run:
+        run_once(args.run)
     else:
         run_scheduler()

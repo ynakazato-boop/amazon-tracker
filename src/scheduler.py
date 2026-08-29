@@ -3,6 +3,10 @@ APScheduler-based scheduler.
 - daily   → every day at 02:00 JST
 - weekly  → every Monday at 02:00 JST
 - monthly → 1st of every month at 02:00 JST
+
+On this deployment the in-process APScheduler is NOT used; jobs are triggered
+one-shot from the host cron via `python main.py --run <frequency>` (see
+run-cron.sh). `run_job()` is the shared entry point for both paths.
 """
 
 import csv
@@ -42,12 +46,18 @@ def _run_job(frequency: str):
         return
 
     log_id = start_run_log()
-    success = 0
-    failed = 0
+    success = 0   # check completed AND stored
+    failed = 0    # check could not be completed (browser/timeout/blocked)
 
     try:
         results = run_checks_sync(targets)
         for result, target in zip(results, targets):
+            # A failed check must NOT be written as 圏外 — keep the last good
+            # value on the dashboard instead of flipping it to a false 圏外.
+            if not getattr(result, "ok", True):
+                failed += 1
+                logger.warning(f"Skipped storing failed check: {result.asin} / '{result.keyword}'")
+                continue
             try:
                 insert_ranking(
                     asin=result.asin,
@@ -65,7 +75,12 @@ def _run_job(frequency: str):
         failed += len(targets)
 
     finish_run_log(log_id, total=len(targets), success=success, failed=failed)
-    logger.info(f"=== {frequency} job done: {success} ok, {failed} failed ===")
+    logger.info(f"=== {frequency} job done: {success} stored, {failed} failed/skipped ===")
+
+
+# Public one-shot entry point (used by `main.py --run <frequency>`)
+def run_job(frequency: str):
+    _run_job(frequency)
 
 
 def run_daily():

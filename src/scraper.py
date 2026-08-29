@@ -5,12 +5,22 @@ Amazon.co.jp keyword rank scraper using Playwright.
 - Returns rank=None if not found within 3 pages
 - Rate limiting: random 20-40s delay between requests
 - Applies playwright-stealth to reduce bot detection
+
+Reliability notes (2026-08 hardening):
+- `RankResult.ok` distinguishes a *successful* check (found, or genuinely not in
+  top 144) from a *failed* check (browser crash, navigation timeout, blocked /
+  near-empty result page). Callers should NOT record a failed check as 圏外.
+- Any leftover Chromium processes are killed before each run so they cannot pile
+  up on a small VPS.
+- The browser is always closed, even when an exception happens mid-run.
 """
 
 import asyncio
 import concurrent.futures
 import logging
+import os
 import random
+import signal
 import urllib.parse
 from dataclasses import dataclass
 
@@ -19,7 +29,10 @@ from playwright.async_api import async_playwright, Page, BrowserContext
 logger = logging.getLogger(__name__)
 
 RESULTS_PER_PAGE = 48  # Amazon PC: 48 results per page
-MAX_PAGES = 3           # Check up to page 3 → max rank 144
+MAX_PAGES = 3          # Check up to page 3 → max rank 144
+MIN_HEALTHY_RESULTS = 10  # A real search-result page has far more than this.
+                          # Fewer → we were blocked / page didn't load properly.
+LAUNCH_TIMEOUT_MS = 120_000
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -36,6 +49,33 @@ class RankResult:
     keyword: str
     rank: int | None    # 1-144, or None if not found
     page: int | None    # 1-3, or None if not found
+    ok: bool = True     # False → the check failed; do NOT store as 圏外
+
+
+def _kill_stray_chrome() -> None:
+    """Best-effort kill of leftover Chromium processes from previous (crashed)
+    runs. Pure /proc scan so it needs no extra binaries in the container image.
+    Only called at the very start of a run, before we launch our own browser.
+    """
+    killed = 0
+    try:
+        pids = [p for p in os.listdir("/proc") if p.isdigit()]
+    except OSError:
+        return
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as fh:
+                cmd = fh.read().replace(b"\x00", b" ").decode("utf-8", "ignore")
+        except OSError:
+            continue
+        if "chrome-linux/chrome" in cmd:
+            try:
+                os.kill(int(pid), signal.SIGKILL)
+                killed += 1
+            except (ProcessLookupError, PermissionError):
+                pass
+    if killed:
+        logger.warning(f"Killed {killed} stray chrome process(es) before starting")
 
 
 async def _random_delay(min_s: float = 20.0, max_s: float = 40.0):
@@ -72,16 +112,21 @@ async def check_rank(
 ) -> RankResult:
     """
     Search keyword on amazon.co.jp and find the rank of the given ASIN.
-    Checks pages 1-3 (max rank 144). Returns rank=None if not found.
+    Checks pages 1-3 (max rank 144).
+
+    Returns:
+      - rank set               → found
+      - rank=None, ok=True     → genuinely not in the top 144
+      - rank=None, ok=False    → the check could not be completed (timeout /
+                                 blocked / empty page). Caller must not store it.
     """
     encoded_kw = urllib.parse.quote(keyword)
     page = await context.new_page()
+    saw_healthy_page = False
 
     try:
         for page_num in range(1, MAX_PAGES + 1):
-            url = (
-                f"https://www.amazon.co.jp/s?k={encoded_kw}&page={page_num}"
-            )
+            url = f"https://www.amazon.co.jp/s?k={encoded_kw}&page={page_num}"
             logger.info(f"[{asin}] '{keyword}' page {page_num}: {url}")
 
             try:
@@ -96,11 +141,14 @@ async def check_rank(
             asins = await _get_asins_on_page(page)
             logger.debug(f"Page {page_num}: found {len(asins)} ASINs")
 
+            if len(asins) >= MIN_HEALTHY_RESULTS:
+                saw_healthy_page = True
+
             if asin in asins:
                 position_on_page = asins.index(asin) + 1
                 overall_rank = (page_num - 1) * RESULTS_PER_PAGE + position_on_page
                 logger.info(f"Found {asin} at rank {overall_rank} (page {page_num}, pos {position_on_page})")
-                return RankResult(asin=asin, keyword=keyword, rank=overall_rank, page=page_num)
+                return RankResult(asin=asin, keyword=keyword, rank=overall_rank, page=page_num, ok=True)
 
             # If fewer results than expected, no point checking next page
             if len(asins) < RESULTS_PER_PAGE:
@@ -110,11 +158,20 @@ async def check_rank(
             if page_num < MAX_PAGES:
                 await _random_delay(20.0, 40.0)
 
+        if not saw_healthy_page:
+            # We never managed to read a proper result page → treat as failure,
+            # not as 圏外. This is what used to produce false "圏外" rows.
+            logger.warning(f"[{asin}] '{keyword}': no readable result page (blocked/timeout); marking check as FAILED")
+            return RankResult(asin=asin, keyword=keyword, rank=None, page=None, ok=False)
+
         logger.info(f"{asin} not found in top {MAX_PAGES * RESULTS_PER_PAGE} results for '{keyword}'")
-        return RankResult(asin=asin, keyword=keyword, rank=None, page=None)
+        return RankResult(asin=asin, keyword=keyword, rank=None, page=None, ok=True)
 
     finally:
-        await page.close()
+        try:
+            await page.close()
+        except Exception:
+            pass
 
 
 async def run_checks(targets: list[dict]) -> list[RankResult]:
@@ -123,56 +180,74 @@ async def run_checks(targets: list[dict]) -> list[RankResult]:
     Each target: {"asin": str, "keyword": str, "note": str}
     """
     results: list[RankResult] = []
+    _kill_stray_chrome()
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled",
-            ],
-        )
-
-        for i, target in enumerate(targets):
-            asin = target["asin"]
-            keyword = target["keyword"]
-
-            # New context per target (fresh cookies/fingerprint)
-            ua = random.choice(USER_AGENTS)
-            context = await browser.new_context(
-                user_agent=ua,
-                locale="ja-JP",
-                timezone_id="Asia/Tokyo",
-                viewport={"width": 1366, "height": 768},
-                extra_http_headers={
-                    "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
-                },
-            )
-
+        browser = None
+        try:
             try:
-                # Apply stealth if available
-                try:
-                    from playwright_stealth import stealth_async
-                    page = await context.new_page()
-                    await stealth_async(page)
-                    await page.close()
-                except ImportError:
-                    pass
-
-                result = await check_rank(context, asin, keyword)
-                results.append(result)
+                browser = await pw.chromium.launch(
+                    headless=True,
+                    timeout=LAUNCH_TIMEOUT_MS,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-blink-features=AutomationControlled",
+                    ],
+                )
             except Exception as e:
-                logger.error(f"Error checking {asin} / '{keyword}': {e}")
-                results.append(RankResult(asin=asin, keyword=keyword, rank=None, page=None))
-            finally:
-                await context.close()
+                logger.error(f"Chromium failed to launch ({e}); marking all {len(targets)} target(s) as FAILED")
+                return [
+                    RankResult(asin=t["asin"], keyword=t["keyword"], rank=None, page=None, ok=False)
+                    for t in targets
+                ]
 
-            # Rate limit between targets (except after last one)
-            if i < len(targets) - 1:
-                await _random_delay(20.0, 40.0)
+            for i, target in enumerate(targets):
+                asin = target["asin"]
+                keyword = target["keyword"]
 
-        await browser.close()
+                # New context per target (fresh cookies/fingerprint)
+                ua = random.choice(USER_AGENTS)
+                context = await browser.new_context(
+                    user_agent=ua,
+                    locale="ja-JP",
+                    timezone_id="Asia/Tokyo",
+                    viewport={"width": 1366, "height": 768},
+                    extra_http_headers={
+                        "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
+                    },
+                )
+
+                try:
+                    # Apply stealth if available
+                    try:
+                        from playwright_stealth import stealth_async
+                        page = await context.new_page()
+                        await stealth_async(page)
+                        await page.close()
+                    except ImportError:
+                        pass
+
+                    result = await check_rank(context, asin, keyword)
+                    results.append(result)
+                except Exception as e:
+                    logger.error(f"Error checking {asin} / '{keyword}': {e}")
+                    results.append(RankResult(asin=asin, keyword=keyword, rank=None, page=None, ok=False))
+                finally:
+                    try:
+                        await context.close()
+                    except Exception:
+                        pass
+
+                # Rate limit between targets (except after last one)
+                if i < len(targets) - 1:
+                    await _random_delay(20.0, 40.0)
+        finally:
+            if browser is not None:
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
 
     return results
 
